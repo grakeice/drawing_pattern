@@ -106,7 +106,7 @@ class SnowFlake : PApplet() {
     override fun setup() {
         noLoop()
         background(255)
-        engine = Engine(1)
+        engine = Engine()
         sides = engine.getComputedSides()
         root = Vector(width.toFloat() / 2f, 100f)
     }
@@ -171,9 +171,5 @@ class SnowFlake : PApplet() {
 }
 
 fun main() {
-//    PApplet.main(LinePattern::class.java.name)
-//    PApplet.main(FacePattern::class.java.name)
-//    PApplet.main(LinePatternByAngle::class.java.name)
-//    PApplet.main(DrawTree::class.java.name)
     PApplet.main(SnowFlake::class.java.name)
 }
