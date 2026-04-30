@@ -1,5 +1,6 @@
 package org.example.snowflake
 
+import kotlinx.coroutines.*
 import processing.core.PApplet
 import kotlin.math.*
 
@@ -11,7 +12,7 @@ data class Vector(val x: Float, val y: Float) {
     operator fun div(scalar: Float) = Vector(x / scalar, y / scalar)
     operator fun unaryMinus() = Vector(-x, -y)
     fun toPolar(): Polar {
-        return Polar(sqrt(x.pow(2) + y.pow(2)).toFloat(), atan2(y, x))
+        return Polar(sqrt(x.pow(2) + y.pow(2)), atan2(y, x))
     }
 }
 
@@ -67,17 +68,18 @@ class SnowFlake : PApplet() {
             }
         }
 
-        fun getComputedSides(): List<Vector> {
+        suspend fun getComputedSides(): List<Vector> {
             return computeSnowflakeSides(sides, depth, splitN)
         }
 
-        private fun computeSnowflakeSides(sides: List<Vector>, depth: Int, n: Int): List<Vector> {
+        private suspend fun computeSnowflakeSides(sides: List<Vector>, depth: Int, n: Int): List<Vector> {
             if (depth > 0) {
                 val result = arrayListOf<Vector>()
                 for (side in sides) {
                     val baseSidePolar = side.toPolar()
                     val processedRadius = baseSidePolar.radius / n
                     for (i in 0..n) {
+                        yield()
                         when (i) {
                             0, n -> result.add(Polar(processedRadius, baseSidePolar.angle).toVector())
                             else -> result.add(
@@ -99,53 +101,55 @@ class SnowFlake : PApplet() {
         size(1000, 1000)
     }
 
+    var isComputing = false
+
     lateinit var engine: Engine
-    lateinit var sides: List<Vector>
+    private var sides: List<Vector> = listOf()
     lateinit var root: Vector
     override fun setup() {
-        noLoop()
         background(255)
         engine = Engine()
-        sides = engine.getComputedSides()
-        root = Vector(width.toFloat() / 2f, 100f)
+        scope.launch(Dispatchers.Default) {
+            sides = engine.getComputedSides()
+        }
+        root = Vector(0f, 0f)
     }
 
     fun drawLine(from: Vector, to: Vector) {
         line(from.x, from.y, to.x, to.y)
     }
 
-    override fun draw() {
-        background(255)
+    private val parentJob = Job()
+    private val scope = CoroutineScope(Dispatchers.Default + parentJob)
 
-        val points = arrayListOf<Vector>()
-        var currentPos = Vector(0f, 0f)
-        points.add(currentPos)
-        for (side in sides) {
-            currentPos += side
-            points.add(currentPos)
+    @Volatile
+    private var computedResult: List<Vector>? = null
+
+    private var computeJob: Job? = null
+
+    fun updateSidesAsync() {
+        computeJob?.cancel()
+
+        isComputing = true
+        computeJob = scope.launch(Dispatchers.Default) {
+            try {
+                val result = engine.getComputedSides()
+                if (isActive) {
+                    computedResult = result
+                    sides = result
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } finally {
+                if (isActive) {
+                    computedResult = null
+                    isComputing = false
+                }
+            }
         }
+    }
 
-        val minX = points.minOf { it.x }
-        val maxX = points.maxOf { it.x }
-        val minY = points.minOf { it.y }
-        val maxY = points.maxOf { it.y }
-
-        val figureCenterX = (minX + maxX) / 2f
-        val figureCenterY = (minY + maxY) / 2f
-
-        val offsetX = width / 2f - figureCenterX
-        val offsetY = height / 2f - figureCenterY
-
-        pushMatrix()
-        translate(offsetX, offsetY)
-        var before = points[0]
-        for (i in 1 until points.size) {
-            val current = points[i]
-            drawLine(before, current)
-            before = current
-        }
-        popMatrix()
-
+    fun drawUI() {
         val font = createFont("Noto Sans", 15f)
         textFont(font)
         fill(0)
@@ -166,21 +170,93 @@ class SnowFlake : PApplet() {
         text(": 深さ", explainOffset, height - 30f)
     }
 
+    override fun draw() {
+        background(255)
+        if (isComputing) {
+            fill(255f, 0f, 0f)
+            text("Now Computing...", width - 150f, 30f)
+        }
+        val points = arrayListOf<Vector>()
+        var currentPos = Vector(0f, 0f)
+        points.add(currentPos)
+        for (side in sides) {
+            currentPos += side
+            points.add(currentPos)
+        }
+
+        val minX = points.minOf { it.x }
+        val maxX = points.maxOf { it.x }
+        val minY = points.minOf { it.y }
+        val maxY = points.maxOf { it.y }
+
+        val figureCenterX = (minX + maxX) / 2f
+        val figureCenterY = (minY + maxY) / 2f
+
+        val offsetX = width / 2f - figureCenterX + root.x
+        val offsetY = height / 2f - figureCenterY + root.y
+
+        pushMatrix()
+        translate(offsetX, offsetY)
+        var before = points[0]
+        for (i in 1 until points.size) {
+            val current = points[i]
+            drawLine(before, current)
+            before = current
+        }
+        popMatrix()
+
+        drawUI()
+    }
+
     override fun keyPressed() {
+        var shouldUpdate = false
+
         if (key.code == CODED) {
             when (keyCode) {
-                RIGHT -> engine.depth += 1
-                LEFT -> engine.depth -= 1
-                UP -> engine.splitN += 1
-                DOWN -> engine.splitN -= 1
+                RIGHT -> {
+                    engine.depth += 1
+                    shouldUpdate = true
+                }
+
+                LEFT -> {
+                    engine.depth -= 1
+                    shouldUpdate = true
+                }
+
+                UP -> {
+                    engine.splitN += 1
+                    shouldUpdate = true
+                }
+
+                DOWN -> {
+                    engine.splitN -= 1
+                    shouldUpdate = true
+                }
+
                 else -> return
             }
         } else {
             when (key) {
-                '+', '=' -> engine.radius += 100f
-                '-' -> engine.radius -= 100f
-                'l' -> engine.baseN += 1
-                'j' -> engine.baseN -= 1
+                '+', '=' -> {
+                    engine.radius += 100f
+                    shouldUpdate = true
+                }
+
+                '-' -> {
+                    engine.radius -= 100f
+                    shouldUpdate = true
+                }
+
+                'l' -> {
+                    engine.baseN += 1
+                    shouldUpdate = true
+                }
+
+                'j' -> {
+                    engine.baseN -= 1
+                    shouldUpdate = true
+                }
+
                 'w' -> root += Vector(0f, 10f)
                 's' -> root += Vector(0f, -10f)
                 'a' -> root += Vector(10f, 0f)
@@ -188,8 +264,15 @@ class SnowFlake : PApplet() {
                 else -> return
             }
         }
-        sides = engine.getComputedSides()
-        redraw()
+
+        if (shouldUpdate) {
+            updateSidesAsync()
+        }
+    }
+
+    override fun exit() {
+        parentJob.cancel()
+        super.exit()
     }
 }
 
