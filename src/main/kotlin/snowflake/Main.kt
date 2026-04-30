@@ -82,8 +82,7 @@ class SnowFlake : PApplet() {
                             0, n -> result.add(Polar(processedRadius, baseSidePolar.angle).toVector())
                             else -> result.add(
                                 Polar(
-                                    processedRadius,
-                                    baseSidePolar.angle + PI - i * 2 * PI / n
+                                    processedRadius, baseSidePolar.angle + PI - i * 2 * PI / n
                                 ).toVector()
                             )
                         }
@@ -117,12 +116,36 @@ class SnowFlake : PApplet() {
 
     override fun draw() {
         background(255)
-        var before = root
+
+        val points = arrayListOf<Vector>()
+        var currentPos = Vector(0f, 0f)
+        points.add(currentPos)
         for (side in sides) {
-            val current = before + side
+            currentPos += side
+            points.add(currentPos)
+        }
+
+        val minX = points.minOf { it.x }
+        val maxX = points.maxOf { it.x }
+        val minY = points.minOf { it.y }
+        val maxY = points.maxOf { it.y }
+
+        val figureCenterX = (minX + maxX) / 2f
+        val figureCenterY = (minY + maxY) / 2f
+
+        val offsetX = width / 2f - figureCenterX
+        val offsetY = height / 2f - figureCenterY
+
+        pushMatrix()
+        translate(offsetX, offsetY)
+        var before = points[0]
+        for (i in 1 until points.size) {
+            val current = points[i]
             drawLine(before, current)
             before = current
         }
+        popMatrix()
+
         val font = createFont("Noto Sans", 15f)
         textFont(font)
         fill(0)
