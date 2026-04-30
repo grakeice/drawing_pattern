@@ -2,6 +2,7 @@ package org.example.snowflake
 
 import kotlinx.coroutines.*
 import processing.core.PApplet
+import processing.core.PFont
 import kotlin.math.*
 
 data class Vector(val x: Float, val y: Float) {
@@ -45,7 +46,7 @@ class SnowFlake : PApplet() {
         var splitN: Int
             get() = _splitN
             set(value) {
-                _splitN = if (value < 2) 2 else value
+                _splitN = if (value < 3) 3 else value
             }
 
         private var _baseN = baseN
@@ -106,8 +107,12 @@ class SnowFlake : PApplet() {
     lateinit var engine: Engine
     private var sides: List<Vector> = listOf()
     lateinit var root: Vector
+    lateinit var font: PFont
     override fun setup() {
         background(255)
+        font = createFont("Noto Sans", 15f)
+        textFont(font)
+
         engine = Engine()
         scope.launch(Dispatchers.Default) {
             sides = engine.getComputedSides()
@@ -150,8 +155,6 @@ class SnowFlake : PApplet() {
     }
 
     fun drawUI() {
-        val font = createFont("Noto Sans", 15f)
-        textFont(font)
         fill(0)
         text("元の図形　 : 正 ${engine.baseN} 角形", 10f, 30f)
         text("辺の分割数 : ${engine.splitN}", 10f, 50f)
@@ -174,7 +177,7 @@ class SnowFlake : PApplet() {
         background(255)
         if (isComputing) {
             fill(255f, 0f, 0f)
-            text("Now Computing...", width - 150f, 30f)
+            text("計算中...", width - 150f, 30f)
         }
         val points = arrayListOf<Vector>()
         var currentPos = Vector(0f, 0f)
