@@ -71,8 +71,13 @@ class SnowFlake : PApplet() {
             sides = newSides
         }
 
-        suspend fun getComputedSides(): List<Vector> {
-            return computeSnowflakeSides(sides, depth, splitN)
+
+        suspend fun getComputedSides(): List<Vector> = coroutineScope {
+            sides.map { initialSide ->
+                async {
+                    computeSnowflakeSides(listOf(initialSide), depth, splitN)
+                }
+            }.awaitAll().flatten()
         }
 
         private suspend fun computeSnowflakeSides(sides: List<Vector>, depth: Int, n: Int): List<Vector> {
