@@ -26,13 +26,14 @@ data class Polar(val radius: Float, val angle: Float) {
 class SnowFlake : PApplet() {
 
     class Engine(depth: Int = 1, splitN: Int = 3, baseN: Int = 3) {
-        var sides = arrayListOf<Vector>()
+        @Volatile
+        private var sides: List<Vector> = emptyList()
 
         private var _radius = 500f
         var radius: Float
             get() = _radius
             set(value) {
-                _radius = value
+                _radius = if (value >= 0f) value else 0f
                 initializeSides()
             }
 
@@ -62,11 +63,12 @@ class SnowFlake : PApplet() {
         }
 
         fun initializeSides() {
-            sides.clear()
+            val newSides = arrayListOf<Vector>()
             val baseAngle = PI * (2 - 1f / baseN)
             for (i in 0 until baseN) {
-                sides.add(Polar(radius, baseAngle + PI - i * 2 * PI / baseN).toVector())
+                newSides.add(Polar(radius, baseAngle + PI - i * 2 * PI / baseN).toVector())
             }
+            sides = newSides
         }
 
         suspend fun getComputedSides(): List<Vector> {
@@ -77,10 +79,10 @@ class SnowFlake : PApplet() {
             if (depth > 0) {
                 val result = arrayListOf<Vector>()
                 for (side in sides) {
+                    yield()
                     val baseSidePolar = side.toPolar()
                     val processedRadius = baseSidePolar.radius / n
                     for (i in 0..n) {
-                        yield()
                         when (i) {
                             0, n -> result.add(Polar(processedRadius, baseSidePolar.angle).toVector())
                             else -> result.add(
@@ -114,9 +116,7 @@ class SnowFlake : PApplet() {
         textFont(font)
 
         engine = Engine()
-        scope.launch(Dispatchers.Default) {
-            sides = engine.getComputedSides()
-        }
+        updateSidesAsync()
         root = Vector(0f, 0f)
     }
 
@@ -126,9 +126,6 @@ class SnowFlake : PApplet() {
 
     private val parentJob = Job()
     private val scope = CoroutineScope(Dispatchers.Default + parentJob)
-
-    @Volatile
-    private var computedResult: List<Vector>? = null
 
     private var computeJob: Job? = null
 
@@ -140,14 +137,12 @@ class SnowFlake : PApplet() {
             try {
                 val result = engine.getComputedSides()
                 if (isActive) {
-                    computedResult = result
                     sides = result
                 }
             } catch (e: CancellationException) {
                 throw e
             } finally {
                 if (isActive) {
-                    computedResult = null
                     isComputing = false
                 }
             }
@@ -179,10 +174,15 @@ class SnowFlake : PApplet() {
             fill(255f, 0f, 0f)
             text("計算中...", width - 150f, 30f)
         }
+        val currentSides = sides
+        if (currentSides.isEmpty()) {
+            drawUI()
+            return
+        }
         val points = arrayListOf<Vector>()
         var currentPos = Vector(0f, 0f)
         points.add(currentPos)
-        for (side in sides) {
+        for (side in currentSides) {
             currentPos += side
             points.add(currentPos)
         }
