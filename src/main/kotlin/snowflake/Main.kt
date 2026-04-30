@@ -71,8 +71,8 @@ class SnowFlake : PApplet() {
             return computeSnowflakeSides(sides, depth, splitN)
         }
 
-        private fun computeSnowflakeSides(sides: List<Vector>, depth: Int, n: Int = 3): List<Vector> {
-            if (depth > 0 && n >= 3) {
+        private fun computeSnowflakeSides(sides: List<Vector>, depth: Int, n: Int): List<Vector> {
+            if (depth > 0) {
                 val result = arrayListOf<Vector>()
                 for (side in sides) {
                     val baseSidePolar = side.toPolar()
